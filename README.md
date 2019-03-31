@@ -53,6 +53,7 @@ python svtplaydl.py
 
 courselist.txt
 ```notepad
+var-tid-ar-nu
 svenska-nyheter
 den-forsta-manniskan
 .
