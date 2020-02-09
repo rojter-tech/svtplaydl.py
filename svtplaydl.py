@@ -1,10 +1,47 @@
-import sys, os
+import sys, os, re, requests, io
 from subprocess import Popen, PIPE, STDOUT
 
-def svtplaydl(VIDEO,DLPATH):
+SVT_URL = "https://www.svtplay.se"
 
+def parse_series(VIDEO):
+    svt_url = SVT_URL
+    series = VIDEO
+
+    r = requests.get(svt_url + '/' + series)
+    html = str(r.content)
+    rough_episode = re.compile(r'\"\$Episode\:.*?{"svtplay":".*?"Urls"}')
+    specific_episode = re.compile(r'(?<={"svtplay":").*?(?=")')
+
+    invoke_links = []
+    for episode in rough_episode.findall(html):
+        this_episode = specific_episode.findall(episode)
+        if this_episode:
+            invoke_links.append(svt_url + this_episode[0])
+    
+    return invoke_links
+
+def _cli_request(command, logpath):
+    """Invokes an OS command line request
+    
+    Arguments:
+        command {str} -- Full command string
+        logpath {str} -- Path to stdout/stderror log file
+    
+    """
+    os.chdir(os.path.dirname(logpath))
+    print("Logging stdout/stderror to:\n" + logpath + "\n")
+
+    with Popen(command, shell=True, stdout=PIPE, stderr=STDOUT) as process, \
+        open(file=logpath, mode='wt') as logfile:
+            for line in io.TextIOWrapper(process.stdout, newline=''):
+                sys.stdout.write(line)
+                logfile.write(line)
+                logfile.flush()
+
+
+def svtplaydl(request,video,dlpath):
     # OS parameters - Creates course path and sets current course directory
-    coursepath = os.path.join(DLPATH,VIDEO)
+    coursepath = os.path.join(dlpath,video)
     if not os.path.exists(coursepath):
         os.mkdir(coursepath)
     os.chdir(coursepath)
@@ -20,22 +57,15 @@ def svtplaydl(VIDEO,DLPATH):
     verbc = sp + "--verbose"
     template = qu + "%(playlist_index)s-%(title)s-%(resolution)s.%(ext)s" + qu
     filenamec = sp + "-o" + sp + template
-    videourlc = sp + qu + siteurl + VIDEO + qu
+    videourlc = sp + qu + request + qu
     
     # Command string
-    cmd = cmdtool + verbc + filenamec + videourlc
+    command = cmdtool + verbc + filenamec + videourlc
+    print(command)
     
     # Command execution and logging
-    bufflen = 512
-    logile = VIDEO + ".log"
-    logpath = os.path.join(coursepath,logile)
-    with Popen(cmd, shell=True, stdout=PIPE, stderr=STDOUT, bufsize=bufflen) as process, \
-        open(logpath, 'ab',bufflen) as file:
-        for line in process.stdout:
-            sys.stdout.buffer.write(line)
-            file.flush()
-            file.write(line)
-            file.flush()
+    logpath = os.path.join(coursepath, video + ".log")
+    _cli_request(command, logpath)
 
 def videolist(scriptpath):
 
@@ -63,11 +93,13 @@ if __name__ == "__main__":
     
     # Download directory path
     dldirname = "Videos"
-    DLPATH = os.path.join(scriptpath,dldirname)
-    if not os.path.exists(DLPATH):
-        os.mkdir(DLPATH)
+    dlpath = os.path.join(scriptpath,dldirname)
+    if not os.path.exists(dlpath):
+        os.mkdir(dlpath)
     
     # Looping through the videolist determined by videolist()
     videoList = videolist(scriptpath)
-    for VIDEO in videoList:
-        svtplaydl(VIDEO,DLPATH)
+    for video in videoList:
+        invoke_links = parse_series(video)
+        for request in invoke_links:
+            svtplaydl(request,video,dlpath)
